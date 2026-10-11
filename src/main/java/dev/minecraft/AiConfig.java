@@ -11,11 +11,25 @@ import java.nio.file.Path;
 public final class AiConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+	/** "ollama" (local, free) or "anthropic" (Claude API, needs a key). */
+	public String provider = "ollama";
+	public String ollama_url = "http://localhost:11434";
+	public String ollama_model = "llama3.2";
+
 	public String api_key = "";
 	public String model = "claude-haiku-4-5-20251001";
 	public int chat_radius = 32;
 	public int cooldown_seconds = 4;
 	public String default_persona = "a friendly, curious Minecraft player who likes building and exploring";
+
+	public boolean isOllama() {
+		return !"anthropic".equalsIgnoreCase(provider);
+	}
+
+	/** Ollama needs no credentials; Anthropic needs a key. */
+	public boolean ready() {
+		return isOllama() || !key().isEmpty();
+	}
 
 	public String key() {
 		if (api_key != null && !api_key.isBlank()) return api_key.trim();

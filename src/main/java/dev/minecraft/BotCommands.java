@@ -68,7 +68,9 @@ public final class BotCommands {
 			}))
 			.then(literal("reload").executes(ctx -> {
 				MinecrAIft.reloadConfig();
-				ok(ctx.getSource(), "Config reloaded" + (MinecrAIft.CONFIG.key().isEmpty() ? " (no API key set!)." : "."));
+				AiConfig c = MinecrAIft.CONFIG;
+				ok(ctx.getSource(), "Config reloaded. Provider: " + (c.isOllama() ? "ollama (" + c.ollama_model + ")" : "anthropic (" + c.model + ")")
+					+ (c.ready() ? "." : " - no API key set!"));
 				return 1;
 			})));
 	}

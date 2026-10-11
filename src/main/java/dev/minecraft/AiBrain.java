@@ -34,9 +34,10 @@ public final class AiBrain {
 		if (bot.busy || server.getTicks() < bot.nextReplyTick) return;
 		bot.nextReplyTick = server.getTicks() + cfg.cooldown_seconds * 20L;
 
-		if (cfg.key().isEmpty()) {
-			sender.sendMessage(Text.literal("[minecrAI-ft] No API key set. Put one in config/minecraift.json "
-				+ "(or set ANTHROPIC_API_KEY) and run /ai reload.").formatted(Formatting.RED), false);
+		if (!cfg.ready()) {
+			sender.sendMessage(Text.literal("[minecrAI-ft] provider is \"anthropic\" but no API key is set. Put one in "
+				+ "config/minecraift.json (or set ANTHROPIC_API_KEY), or set provider to \"ollama\", then /ai reload.")
+				.formatted(Formatting.RED), false);
 			return;
 		}
 
@@ -53,7 +54,13 @@ public final class AiBrain {
 			bot.busy = false;
 			if (bot.isRemoved()) return;
 			if (err != null) {
-				MinecrAIft.LOGGER.warn("AI request for {} failed: {}", bot.botName(), err.getMessage());
+				Throwable cause = err.getCause() != null ? err.getCause() : err;
+				String hint = cfg.isOllama()
+					? " Is Ollama running at " + cfg.ollama_url + " (try `ollama serve`) with model " + cfg.ollama_model + "?"
+					: "";
+				MinecrAIft.LOGGER.warn("AI request for {} failed: {}.{}", bot.botName(), cause.toString(), hint);
+				sender.sendMessage(Text.literal("[minecrAI-ft] " + bot.botName() + " couldn't think: AI request failed."
+					+ hint).formatted(Formatting.RED), false);
 				return;
 			}
 			apply(server, bot, text);
