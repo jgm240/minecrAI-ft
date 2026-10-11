@@ -3,7 +3,7 @@
   "id": "minecraift",
   "version": "${version}",
   "name": "minecrAI-ft",
-  "description": "Spawn fake players powered by AI that chat, follow and wander.",
+  "description": "Real fake players (full server players) powered by AI: they join, chat, can be messaged and banned.",
   "authors": ["minecrAI-ft"],
   "license": "MIT",
   "environment": "*",

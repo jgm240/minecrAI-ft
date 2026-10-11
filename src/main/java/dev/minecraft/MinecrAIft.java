@@ -2,10 +2,10 @@ package dev.minecraft;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
-import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,38 +21,18 @@ public class MinecrAIft implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		reloadConfig();
-		ModEntities.register();
 		CommandRegistrationCallback.EVENT.register((dispatcher, registry, env) -> BotCommands.register(dispatcher));
 
-		ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
-			if (entity instanceof AiPlayerEntity bot) Bots.ALL.add(bot);
-		});
-		ServerEntityEvents.ENTITY_UNLOAD.register((entity, world) -> {
-			if (entity instanceof AiPlayerEntity bot) Bots.ALL.remove(bot);
-		});
+		ServerLifecycleEvents.SERVER_STARTED.register(Bots::loadAndRestore);
+		ServerTickEvents.END_SERVER_TICK.register(Bots::tick);
 
-		// Bots hear nearby chat. A named bot answers; otherwise the nearest bot does.
-		ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
-			MinecraftServer server = sender.getServer();
-			String text = message.getContent().getString();
-			String lower = text.toLowerCase();
-			double r2 = (double) CONFIG.chat_radius * CONFIG.chat_radius;
-
-			AiPlayerEntity named = null, nearest = null;
-			double best = Double.MAX_VALUE;
-			for (AiPlayerEntity bot : Bots.ALL) {
-				if (bot.getWorld() != sender.getWorld()) continue;
-				double d = bot.squaredDistanceTo(sender);
-				if (d > r2) continue;
-				bot.hear(sender.getName().getString() + ": " + text);
-				if (lower.contains(bot.botName().toLowerCase())) named = bot;
-				if (d < best) {
-					best = d;
-					nearest = bot;
-				}
+		// Keep the tracked set in sync; a bot that left for any reason (kick, ban, /ai remove) is not restored,
+		// unless the whole server is just shutting down.
+		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			if (handler.player instanceof AiPlayer bot) {
+				Bots.ALL.remove(bot);
+				if (!server.isStopping() && !bot.isDeadOrRespawning()) Bots.forget(bot.botName());
 			}
-			AiPlayerEntity responder = named != null ? named : nearest;
-			if (responder != null) AiBrain.respond(server, responder, sender, text);
 		});
 	}
 }
