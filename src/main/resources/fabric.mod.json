@@ -3,13 +3,12 @@
   "id": "minecraift",
   "version": "${version}",
   "name": "minecrAI-ft",
-  "description": "Real fake players (full server players) powered by AI: they join, chat, can be messaged and banned.",
+  "description": "Real fake players (full server players) powered by AI: they join, chat, mine, build, can be messaged and banned.",
   "authors": ["minecrAI-ft"],
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.minecraift.MinecrAIft"],
-    "client": ["dev.minecraift.MinecrAIftClient"]
+    "main": ["dev.minecraft.MinecrAIft"]
   },
   "depends": {
     "fabricloader": ">=0.16.0",

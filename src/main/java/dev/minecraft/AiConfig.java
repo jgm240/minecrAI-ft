@@ -12,6 +12,9 @@ public final class AiConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
 	/** "ollama" (local, free) or "anthropic" (Claude API, needs a key). */
+	/** Log what bots hear and plan (INFO level). */
+	public boolean debug = false;
+
 	public String provider = "ollama";
 	public String ollama_url = "http://localhost:11434";
 	public String ollama_model = "llama3.2";
@@ -20,6 +23,16 @@ public final class AiConfig {
 	public String model = "claude-haiku-4-5-20251001";
 	public int chat_radius = 32;
 	public int cooldown_seconds = 4;
+	/** Whether bots may attack other players. They may always fight mobs. */
+	public boolean allow_pvp = false;
+	/** Command names bots may never run (first word, namespace ignored). */
+	public java.util.List<String> blocked_commands = new java.util.ArrayList<>(java.util.List.of(
+		"stop", "kill", "ban", "ban-ip", "banlist", "pardon", "pardon-ip", "kick", "op", "deop", "whitelist",
+		"fill", "fillbiome", "setblock", "clone", "data", "execute", "function", "reload", "save-all", "save-off",
+		"save-on", "setworldspawn", "spawnpoint", "gamerule", "difficulty", "defaultgamemode", "worldborder",
+		"forceload", "publish", "debug", "damage", "clear", "summon", "place", "item", "loot", "transfer", "perf",
+		"jfr", "tick", "adminecraft", "ae", "ac", "ai", "datapack", "return", "rd", "random"));
+
 	public String default_persona = "a friendly, curious Minecraft player who likes building and exploring";
 
 	public boolean isOllama() {

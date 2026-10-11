@@ -7,6 +7,7 @@ import net.minecraft.network.PacketCallbacks;
 import net.minecraft.network.listener.PacketListener;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.ProfilelessChatMessageS2CPacket;
 import net.minecraft.network.NetworkState;
 import net.minecraft.text.Text;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +29,7 @@ public class FakeConnection extends ClientConnection {
 
 	private void intercept(Packet<?> packet, @Nullable PacketCallbacks callbacks) {
 		if (packet instanceof ChatMessageS2CPacket chat) owner.onChatPacket(chat);
+		else if (packet instanceof ProfilelessChatMessageS2CPacket chat) owner.onChatPacket(chat);
 		// Let "sent" callbacks run, e.g. the disconnect that follows a kick packet.
 		if (callbacks != null) callbacks.onSuccess();
 	}
@@ -54,6 +56,11 @@ public class FakeConnection extends ClientConnection {
 
 	@Override
 	public void tick() {
+	}
+
+	@Override
+	public void flush() {
+		// there is no channel to flush
 	}
 
 	@Override

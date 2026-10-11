@@ -22,8 +22,12 @@ public final class BotCommands {
 			.then(literal("spawn").then(argument("name", StringArgumentType.word()).executes(ctx -> {
 				ServerCommandSource src = ctx.getSource();
 				String name = StringArgumentType.getString(ctx, "name");
-				ServerPlayerEntity p = src.getPlayerOrThrow();
-				String err = Bots.spawn(src.getServer(), name, "", p.getServerWorld(), p.getX(), p.getY(), p.getZ(), p.getYaw());
+				String err;
+				if (src.getEntity() instanceof ServerPlayerEntity p) {
+					err = Bots.spawn(src.getServer(), name, "", p.getServerWorld(), p.getX(), p.getY(), p.getZ(), p.getYaw());
+				} else {
+					err = Bots.spawn(src.getServer(), name, "", null, 0, 0, 0, 0); // console: join at world spawn
+				}
 				if (err != null) {
 					src.sendError(Text.literal(err));
 					return 0;
@@ -52,6 +56,38 @@ public final class BotCommands {
 					Bots.updatePersona(bot);
 					ok(ctx.getSource(), "Persona updated.");
 					return 1;
+				}))))
+			.then(literal("say").then(argument("name", StringArgumentType.word())
+				.then(argument("text", StringArgumentType.greedyString()).executes(ctx -> {
+					AiPlayer bot = Bots.find(StringArgumentType.getString(ctx, "name"));
+					if (bot == null) {
+						ctx.getSource().sendError(Text.literal("No such AI player."));
+						return 0;
+					}
+					bot.say(StringArgumentType.getString(ctx, "text"));
+					return 1;
+				}))))
+			.then(literal("do").then(argument("name", StringArgumentType.word())
+				.then(argument("action", StringArgumentType.greedyString()).executes(ctx -> {
+					AiPlayer bot = Bots.find(StringArgumentType.getString(ctx, "name"));
+					if (bot == null) {
+						ctx.getSource().sendError(Text.literal("No such AI player."));
+						return 0;
+					}
+					try {
+						var obj = com.google.gson.JsonParser.parseString(StringArgumentType.getString(ctx, "action")).getAsJsonObject();
+						Task t = Actions.parse(obj, ctx.getSource().getServer());
+						if (t == null) {
+							ctx.getSource().sendError(Text.literal("Unknown action type."));
+							return 0;
+						}
+						bot.setTasks(java.util.List.of(t));
+						ok(ctx.getSource(), bot.botName() + ": " + t.describe());
+						return 1;
+					} catch (RuntimeException e) {
+						ctx.getSource().sendError(Text.literal("Bad action JSON: " + e.getMessage()));
+						return 0;
+					}
 				}))))
 			.then(literal("list").executes(ctx -> {
 				String names = Bots.ALL.stream().map(AiPlayer::botName).sorted()

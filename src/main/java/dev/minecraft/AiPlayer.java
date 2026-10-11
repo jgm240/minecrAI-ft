@@ -6,10 +6,13 @@ import net.minecraft.network.message.MessageType;
 import net.minecraft.network.message.SignedMessage;
 import net.minecraft.network.packet.c2s.common.SyncedClientOptions;
 import net.minecraft.network.packet.s2c.play.ChatMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.ProfilelessChatMessageS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+
+import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -26,6 +29,8 @@ public class AiPlayer extends ServerPlayerEntity {
 	private String persona = "";
 	private final Deque<String> log = new ArrayDeque<>();
 	private boolean dead;
+	private final Deque<Task> tasks = new ArrayDeque<>();
+	private boolean reportedFailure;
 
 	// wander state
 	private int wanderTicks;
@@ -70,6 +75,54 @@ public class AiPlayer extends ServerPlayerEntity {
 		if (mode != Mode.FOLLOW) followTarget = null;
 	}
 
+	/** Replace the current plan. */
+	public void setTasks(java.util.List<Task> list) {
+		tasks.clear();
+		tasks.addAll(list);
+		reportedFailure = false;
+	}
+
+	public boolean hasTasks() {
+		return !tasks.isEmpty();
+	}
+
+	/** A task couldn't be done: remember it for the model and tell the chat once per plan. */
+	public void report(String problem) {
+		hear("[you] " + problem);
+		if (!reportedFailure) {
+			reportedFailure = true;
+			say(problem);
+		}
+	}
+
+	/** Walk (with simulated key presses) toward a point. @return true once within stopDistance horizontally. */
+	public boolean walkToward(Vec3d target, double stopDistance) {
+		double dx = target.x - getX(), dz = target.z - getZ();
+		double dist = Math.sqrt(dx * dx + dz * dz);
+		if (dist <= stopDistance && Math.abs(target.y - getY()) < 3.0) return true;
+		float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+		setYaw(yaw);
+		setHeadYaw(yaw);
+		setBodyYaw(yaw);
+		forwardSpeed = 1f;
+		setSprinting(dist > 8.0);
+		if ((horizontalCollision && isOnGround()) || isTouchingWater() || target.y - getY() > 0.6 && isOnGround() && dist < 2.0) {
+			setJumping(true);
+		}
+		return false;
+	}
+
+	public void lookAt(Vec3d p) {
+		double dx = p.x - getX(), dy = p.y - getEyeY(), dz = p.z - getZ();
+		double h = Math.sqrt(dx * dx + dz * dz);
+		float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+		float pitch = (float) -Math.toDegrees(Math.atan2(dy, h));
+		setYaw(yaw);
+		setHeadYaw(yaw);
+		setBodyYaw(yaw);
+		setPitch(pitch);
+	}
+
 	public void hear(String line) {
 		log.addLast(line);
 		while (log.size() > LOG_LINES) log.removeFirst();
@@ -96,15 +149,23 @@ public class AiPlayer extends ServerPlayerEntity {
 		hear(botName() + " (to " + to + "): " + text);
 	}
 
-	/** Called by the fake connection for every chat packet this player "receives". */
+	/** Called by the fake connection for every signed chat packet this player "receives". */
 	void onChatPacket(ChatMessageS2CPacket packet) {
-		MinecraftServer server = getServer();
-		if (server == null) return;
 		var params = packet.serializedParameters();
-		String sender = params.name().getString();
-		if (sender.equals(botName())) return;
-		boolean dm = params.type().matchesKey(MessageType.MSG_COMMAND_INCOMING);
 		String text = packet.unsignedContent() != null ? packet.unsignedContent().getString() : packet.body().content();
+		received(params.name().getString(), text, params.type().matchesKey(MessageType.MSG_COMMAND_INCOMING));
+	}
+
+	/** Chat without a signing profile, e.g. messages sent by other bots. */
+	void onChatPacket(ProfilelessChatMessageS2CPacket packet) {
+		var params = packet.chatType();
+		received(params.name().getString(), packet.message().getString(),
+			params.type().matchesKey(MessageType.MSG_COMMAND_INCOMING));
+	}
+
+	private void received(String sender, String text, boolean dm) {
+		MinecraftServer server = getServer();
+		if (server == null || sender.equals(botName())) return;
 		server.execute(() -> AiBrain.onChat(server, this, sender, text, dm));
 	}
 
@@ -138,6 +199,19 @@ public class AiPlayer extends ServerPlayerEntity {
 		sidewaysSpeed = 0f;
 		setJumping(false);
 		setSprinting(false);
+
+		Task current = tasks.peekFirst();
+		if (current != null) {
+			boolean done;
+			try {
+				done = current.tick(this);
+			} catch (RuntimeException e) {
+				MinecrAIft.LOGGER.warn("Task '{}' failed for {}: {}", current.describe(), botName(), e.toString());
+				done = true;
+			}
+			if (done) tasks.pollFirst();
+			return;
+		}
 
 		float desiredYaw = getYaw();
 		float speed = 0f;
