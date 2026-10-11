@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraift",
+  "version": "${version}",
+  "name": "minecrAI-ft",
+  "description": "Spawn fake players powered by AI that chat, follow and wander.",
+  "authors": ["minecrAI-ft"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.minecraift.MinecrAIft"],
+    "client": ["dev.minecraift.MinecrAIftClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.4",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
