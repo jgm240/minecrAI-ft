@@ -27,16 +27,31 @@ Set `"provider": "anthropic"` and `api_key` (or the `ANTHROPIC_API_KEY` environm
 | `/ai spawn <name>` | Make a bot join the game at your position (console: world spawn) |
 | `/ai remove <name>` | Make it leave |
 | `/ai persona <name> <text>` | Set its personality (saved) |
+| `/ai train <name\|all> <info>` | Teach a bot a fact or rule; it goes into the bot's prompt and is saved (max 40 notes) |
+| `/ai notes <name>` / `/ai forget <name>` | List / clear what it was taught |
 | `/ai say <name> <text>` | Make it say something in chat |
+| `/ai goal <name> <text>` | Give it a standing goal it keeps working on (e.g. "get an iron pickaxe") |
 | `/ai do <name> <json>` | Run one action by hand, e.g. `{"type":"mine","x":1,"y":64,"z":2}` |
 | `/ai list` / `/ai reload` | List bots / reload config |
 
 ## What bots can do
-Bots are real players with real inventories, so they do things the normal way (reach, mining time, tool speed, spawn protection and
-gamemode rules all apply). The model can chain up to 8 of these per reply:
+Bots are real players with real inventories, so they do things the normal way (reach, mining time, tool speed, tool requirements,
+spawn protection and gamemode rules all apply). The model can chain up to 8 steps per reply.
 
-`goto`, `mine`, `place`, `use_block` (chests, doors, buttons), `use_item` (eat, throw), `select`, `drop`, `attack`, `follow`, `stay`,
-`wander`, and `command`.
+**Skills** (high-level, so even small local models can use them):
+`gather` (logs, stone, any ore or block: walks there, mines it, picks up the drops), `craft` (works out intermediates itself:
+logs -> planks -> sticks -> pickaxe, and places a crafting table it carries or crafts), `smelt` (furnace + fuel), `hunt` (cows,
+zombies, any hostile), `portal` (builds and lights a Nether portal from 10 obsidian + flint and steel), `collect`, `eat`.
+
+**Primitives:** `goto` (A* pathfinding: detours around walls, steps up, drops), `mine`, `place`, `use_block`, `use_item`, `select`,
+`drop`, `attack`, `follow`, `stay`, `wander`, `command`.
+
+**Goals:** the model can set a standing `goal` ("get an iron pickaxe"); the bot keeps asking for next steps with the outcomes until it
+says "done", gets stuck 3 plans in a row, or hits 40 steps. Bots also eat on their own when hungry.
+
+**Knowledge ("training"):** the prompt includes a condensed Minecraft survival guide (tool tiers, progression, food, mobs, Nether
+portal recipe, safety). On top of that, `/ai train <bot|all> <info>` adds your own notes; they're saved per bot, survive deaths and
+restarts, and override the general guide. This teaches the bot facts and rules; it doesn't change the model's weights.
 
 Before each reply the model is shown a snapshot: position, health/food, held item, inventory, the block it is looking at, the nearest
 block of each type within 6 blocks (with coordinates), and nearby mobs/items/players.
@@ -47,8 +62,9 @@ block of each type within 6 blocks (with coordinates), and nearby mobs/items/pla
   Bots are also not operators unless you `/op` them, so vanilla permissions apply on top.
 - **PvP:** bots can fight mobs but won't attack players unless `"allow_pvp": true`.
 - **Chat is never a command:** a reply starting with `/` has the slash stripped.
-- **Limits not covered yet:** bots can't craft, smelt, or use inventory GUIs beyond clicking blocks; there's no pathfinding, so they walk
-  in straight lines and jump over small obstacles.
+- **Limits:** no inventory GUIs beyond clicking blocks, no bridging or digging through terrain while pathfinding, no boats/elytra/
+  redstone. Pathfinding plans up to about 4000 nodes (~60 blocks); farther targets are approached in stages. Tall trees are mined from
+  the ground (reach is about 4.5 blocks).
 
 ## Behaviour
 - `/ai spawn <name>` makes the bot "join the game". Names are 1-16 letters, digits or underscores. Bots use offline-style UUIDs,

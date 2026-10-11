@@ -2,7 +2,9 @@ package dev.minecraft;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.PlayerManager;
@@ -31,27 +33,47 @@ public final class Bots {
 
 	public static final Set<AiPlayer> ALL = ConcurrentHashMap.newKeySet();
 
-	/** name -> persona, for bots that should be online (restored on server start). */
-	private static final Map<String, String> ROSTER = new LinkedHashMap<>();
+	/** What a bot keeps across restarts and deaths: its personality and everything it was taught. */
+	public static final class Brain {
+		public String persona = "";
+		public List<String> notes = new ArrayList<>();
+
+		public Brain() {}
+
+		public Brain(String persona, List<String> notes) {
+			this.persona = persona == null ? "" : persona;
+			this.notes = new ArrayList<>(notes);
+		}
+	}
+
+	/** name -> brain, for bots that should be online (restored on server start). */
+	private static final Map<String, Brain> ROSTER = new LinkedHashMap<>();
 	private static final List<Pending> RESPAWNS = new ArrayList<>();
 	private static Path rosterFile;
 
-	private record Pending(String name, String persona, long atTick) {}
+	private record Pending(String name, Brain brain, long atTick) {}
 
 	private Bots() {}
 
+	/** Drop tracked bots that are no longer the server's live player of that name. */
+	private static void prune(MinecraftServer server) {
+		PlayerManager pm = server.getPlayerManager();
+		ALL.removeIf(b -> b.isRemoved() || pm.getPlayer(b.getUuid()) != b);
+	}
+
 	public static AiPlayer find(String name) {
 		for (AiPlayer b : ALL) {
-			if (b.botName().equalsIgnoreCase(name)) return b;
+			if (b.botName().equalsIgnoreCase(name) && !b.isRemoved()) return b;
 		}
 		return null;
 	}
 
 	/** @return an error message, or null on success. Pass world == null to restore a saved bot where it was. */
-	public static String spawn(MinecraftServer server, String name, String persona, ServerWorld world,
+	public static String spawn(MinecraftServer server, String name, Brain brain, ServerWorld world,
 		double x, double y, double z, float yaw) {
 		if (!NAME.matcher(name).matches()) return "Names must be 1-16 letters, digits or underscores.";
 		PlayerManager pm = server.getPlayerManager();
+		prune(server);
 		if (pm.getPlayer(name) != null) return name + " is already online.";
 
 		GameProfile profile = new GameProfile(Uuids.getOfflinePlayerUuid(name), name);
@@ -59,15 +81,36 @@ public final class Bots {
 
 		ServerWorld spawnWorld = world != null ? world : server.getOverworld();
 		AiPlayer bot = new AiPlayer(server, spawnWorld, profile);
-		bot.setPersona(persona);
+		bot.setPersona(brain.persona);
+		bot.setNotes(brain.notes);
 		ALL.add(bot);
 		pm.onPlayerConnect(new FakeConnection(bot), bot, ConnectedClientData.createDefault(profile, false));
 		if (world != null) {
 			bot.teleport(world, x, y, z, java.util.Set.of(), yaw, 0f, true);
 		}
-		ROSTER.put(name, persona);
+		// A player saved while dead (or the server stopped mid-death) reloads with 0 health and never comes alive.
+		if (bot.getHealth() <= 0f || bot.isDead()) {
+			bot.markDead();
+			RESPAWNS.add(new Pending(name, brain, server.getTicks() + 20));
+			server.execute(() -> bot.networkHandler.disconnect(Text.literal("Respawning")));
+			return null;
+		}
+		ROSTER.put(name, brain);
 		saveRoster();
 		return null;
+	}
+
+	/** Vanilla gives a respawned player a clean slate (items were dropped on death); mirror that. */
+	private static void deletePlayerData(MinecraftServer server, String name) {
+		Path dir = server.getSavePath(WorldSavePath.PLAYERDATA);
+		String uuid = Uuids.getOfflinePlayerUuid(name).toString();
+		for (String ext : new String[] {".dat", ".dat_old"}) {
+			try {
+				Files.deleteIfExists(dir.resolve(uuid + ext));
+			} catch (IOException e) {
+				MinecrAIft.LOGGER.warn("Could not delete {}{}: {}", uuid, ext, e.toString());
+			}
+		}
 	}
 
 	/** Make the bot leave the game (shows the normal "left the game" message). */
@@ -82,16 +125,18 @@ public final class Bots {
 
 	public static void onDeath(AiPlayer bot) {
 		MinecraftServer server = bot.getServer();
-		RESPAWNS.add(new Pending(bot.botName(), bot.persona(), server.getTicks() + RESPAWN_DELAY_TICKS));
+		RESPAWNS.add(new Pending(bot.botName(), new Brain(bot.persona(), bot.notes()), server.getTicks() + RESPAWN_DELAY_TICKS));
 		server.execute(() -> bot.networkHandler.disconnect(Text.literal("Died")));
 	}
 
 	public static void tick(MinecraftServer server) {
+		if (server.getTicks() % 20 == 0) prune(server);
 		if (RESPAWNS.isEmpty()) return;
 		for (Pending p : new ArrayList<>(RESPAWNS)) {
 			if (server.getTicks() < p.atTick()) continue;
 			RESPAWNS.remove(p);
-			String err = spawn(server, p.name(), p.persona(), null, 0, 0, 0, 0);
+			deletePlayerData(server, p.name());
+			String err = spawn(server, p.name(), p.brain(), null, 0, 0, 0, 0);
 			if (err != null) {
 				MinecrAIft.LOGGER.warn("Could not respawn {}: {}", p.name(), err);
 				forget(p.name());
@@ -106,13 +151,20 @@ public final class Bots {
 		ROSTER.clear();
 		try {
 			if (Files.exists(rosterFile)) {
-				Map<String, String> m = GSON.fromJson(Files.readString(rosterFile), new TypeToken<Map<String, String>>() {}.getType());
-				if (m != null) ROSTER.putAll(m);
+				JsonObject root = JsonParser.parseString(Files.readString(rosterFile)).getAsJsonObject();
+				for (Map.Entry<String, JsonElement> e : root.entrySet()) {
+					if (e.getValue().isJsonPrimitive()) { // older format: name -> persona
+						ROSTER.put(e.getKey(), new Brain(e.getValue().getAsString(), List.of()));
+					} else {
+						Brain b = GSON.fromJson(e.getValue(), Brain.class);
+						ROSTER.put(e.getKey(), b == null ? new Brain() : b);
+					}
+				}
 			}
 		} catch (IOException | RuntimeException e) {
 			MinecrAIft.LOGGER.error("Could not read bot roster", e);
 		}
-		for (Map.Entry<String, String> e : new ArrayList<>(ROSTER.entrySet())) {
+		for (Map.Entry<String, Brain> e : new ArrayList<>(ROSTER.entrySet())) {
 			String err = spawn(server, e.getKey(), e.getValue(), null, 0, 0, 0, 0);
 			if (err != null) {
 				MinecrAIft.LOGGER.warn("Not restoring bot {}: {}", e.getKey(), err);
@@ -122,8 +174,9 @@ public final class Bots {
 		saveRoster();
 	}
 
-	public static void updatePersona(AiPlayer bot) {
-		ROSTER.put(bot.botName(), bot.persona());
+	/** Persist a bot's persona and notes after they change. */
+	public static void updateBrain(AiPlayer bot) {
+		ROSTER.put(bot.botName(), new Brain(bot.persona(), bot.notes()));
 		saveRoster();
 	}
 

@@ -41,6 +41,13 @@ public final class Actions {
 			case "select": return new Select(str(o, "item"));
 			case "drop": return new Drop(str(o, "item"), o.has("count") ? o.get("count").getAsInt() : 1);
 			case "attack": return new Attack(str(o, "target"));
+			case "craft": return new Skills.Craft(str(o, "item"), o.has("count") ? o.get("count").getAsInt() : 1);
+			case "smelt": return new Skills.Smelt(str(o, "item"), o.has("count") ? o.get("count").getAsInt() : 1);
+			case "gather": return new Skills.Gather(str(o, "block"), o.has("count") ? o.get("count").getAsInt() : 1);
+			case "hunt": return new Skills.Hunt(str(o, "target"), o.has("count") ? o.get("count").getAsInt() : 1);
+			case "collect": return new Skills.Collect();
+			case "portal": return new PortalTask();
+			case "eat": return new Eat();
 			case "command": return new Command(str(o, "command"));
 			case "follow": return new SetMode(AiPlayer.Mode.FOLLOW, str(o, "target"));
 			case "stay": return new SetMode(AiPlayer.Mode.STAY, "");
@@ -106,7 +113,7 @@ public final class Actions {
 		}
 
 		public boolean tick(AiPlayer bot) {
-			return bot.walkToward(Vec3d.ofBottomCenter(target), 1.0) || ++ticks > 600;
+			return bot.navigateTo(Vec3d.ofBottomCenter(target), 1.0) || ++ticks > 1200;
 		}
 
 		public String describe() {
@@ -118,6 +125,7 @@ public final class Actions {
 		private final BlockPos pos;
 		private float progress;
 		private int ticks;
+		boolean broke;
 
 		Mine(BlockPos p) {
 			pos = p;
@@ -126,12 +134,12 @@ public final class Actions {
 		public boolean tick(AiPlayer bot) {
 			ServerWorld world = bot.getServerWorld();
 			BlockState st = world.getBlockState(pos);
-			if (st.isAir() || ++ticks > 900) {
+			if (st.isAir() || ++ticks > 1500) {
 				world.setBlockBreakingInfo(bot.getId(), pos, -1);
 				return true;
 			}
 			if (!inReach(bot, pos)) {
-				bot.walkToward(Vec3d.ofCenter(pos), 3.0);
+				bot.navigateTo(Vec3d.ofCenter(pos), 2.5);
 				return false;
 			}
 			if (!world.canPlayerModifyAt(bot, pos) || bot.isBlockBreakingRestricted(world, pos, bot.interactionManager.getGameMode())) {
@@ -151,6 +159,11 @@ public final class Actions {
 				}
 			}
 			inv.selectedSlot = best;
+			if (st.isToolRequired() && !inv.getStack(best).isSuitableFor(st)) {
+				bot.report("I need a better tool to mine " + Perception.blockId(st) + ".");
+				world.setBlockBreakingInfo(bot.getId(), pos, -1);
+				return true;
+			}
 
 			float delta = st.calcBlockBreakingDelta(bot, world, pos);
 			if (delta <= 0f) {
@@ -162,7 +175,7 @@ public final class Actions {
 			world.setBlockBreakingInfo(bot.getId(), pos, Math.min(9, (int) (progress * 10f)));
 			if (progress >= 1f) {
 				world.setBlockBreakingInfo(bot.getId(), pos, -1);
-				bot.interactionManager.tryBreakBlock(pos);
+				broke = bot.interactionManager.tryBreakBlock(pos);
 				return true;
 			}
 			return false;
@@ -191,7 +204,7 @@ public final class Actions {
 				return true;
 			}
 			if (!inReach(bot, pos)) {
-				bot.walkToward(Vec3d.ofCenter(pos), 3.0);
+				bot.navigateTo(Vec3d.ofCenter(pos), 2.5);
 				return false;
 			}
 			if (!world.canPlayerModifyAt(bot, pos)) {
@@ -229,7 +242,7 @@ public final class Actions {
 		public boolean tick(AiPlayer bot) {
 			if (++ticks > 300) return true;
 			if (!inReach(bot, pos)) {
-				bot.walkToward(Vec3d.ofCenter(pos), 3.0);
+				bot.navigateTo(Vec3d.ofCenter(pos), 2.5);
 				return false;
 			}
 			bot.lookAt(Vec3d.ofCenter(pos));
@@ -312,15 +325,23 @@ public final class Actions {
 		private final String target;
 		private Entity entity;
 		private int ticks;
+		private boolean killed;
+
+		boolean killed() {
+			return killed;
+		}
 
 		Attack(String target) {
 			this.target = target;
 		}
 
 		public boolean tick(AiPlayer bot) {
-			if (++ticks > 600) return true;
+			if (++ticks > 1200) return true;
 			if (entity == null || !entity.isAlive()) {
-				if (entity != null) return true; // killed it
+				if (entity != null) {
+					killed = true;
+					return true;
+				}
 				entity = find(bot);
 				if (entity == null) {
 					bot.report("I can't find " + target + " to attack.");
@@ -332,7 +353,7 @@ public final class Actions {
 				}
 			}
 			if (bot.squaredDistanceTo(entity) > 9.0) {
-				bot.walkToward(entity.getPos(), 2.0);
+				bot.navigateTo(entity.getPos(), 2.0);
 				return false;
 			}
 			bot.lookAt(entity.getEyePos());
@@ -345,10 +366,15 @@ public final class Actions {
 
 		private Entity find(AiPlayer bot) {
 			String want = target.toLowerCase(Locale.ROOT).replace("minecraft:", "");
+			boolean anyHostile = want.isEmpty();
 			List<Entity> near = bot.getServerWorld().getOtherEntities(bot, bot.getBoundingBox().expand(24.0),
 				e -> e instanceof LivingEntity && e.isAlive());
 			Entity best = null;
 			for (Entity e : near) {
+				if (anyHostile) {
+					if (e instanceof net.minecraft.entity.mob.HostileEntity && (best == null || bot.squaredDistanceTo(e) < bot.squaredDistanceTo(best))) best = e;
+					continue;
+				}
 				boolean nameMatch = e.getName().getString().equalsIgnoreCase(target);
 				boolean typeMatch = Registries.ENTITY_TYPE.getId(e.getType()).getPath().equals(want);
 				if ((nameMatch || typeMatch) && (best == null || bot.squaredDistanceTo(e) < bot.squaredDistanceTo(best))) best = e;
@@ -415,6 +441,54 @@ public final class Actions {
 
 		public String describe() {
 			return mode.name().toLowerCase(Locale.ROOT);
+		}
+	}
+
+	static final class PortalTask implements Task {
+		private Task inner;
+
+		public boolean tick(AiPlayer bot) {
+			if (inner == null) {
+				inner = Skills.portal(bot);
+				if (inner == null) return true;
+			}
+			return inner.tick(bot);
+		}
+
+		public String describe() {
+			return "build a nether portal";
+		}
+	}
+
+	static final class Eat implements Task {
+		private boolean started;
+		private int ticks;
+
+		public boolean tick(AiPlayer bot) {
+			var inv = bot.getInventory();
+			if (!started) {
+				for (int i = 0; i < inv.size(); i++) {
+					if (Skills.isFood(inv.getStack(i))) {
+						if (i < 9) {
+							inv.selectedSlot = i;
+						} else {
+							ItemStack tmp = inv.getStack(inv.selectedSlot);
+							inv.setStack(inv.selectedSlot, inv.getStack(i));
+							inv.setStack(i, tmp);
+						}
+						started = true;
+						bot.interactionManager.interactItem(bot, bot.getServerWorld(), bot.getMainHandStack(), Hand.MAIN_HAND);
+						return false;
+					}
+				}
+				bot.report("I have nothing to eat.");
+				return true;
+			}
+			return !bot.isUsingItem() || ++ticks > 80;
+		}
+
+		public String describe() {
+			return "eat";
 		}
 	}
 }

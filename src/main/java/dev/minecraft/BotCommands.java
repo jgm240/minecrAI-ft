@@ -24,9 +24,9 @@ public final class BotCommands {
 				String name = StringArgumentType.getString(ctx, "name");
 				String err;
 				if (src.getEntity() instanceof ServerPlayerEntity p) {
-					err = Bots.spawn(src.getServer(), name, "", p.getServerWorld(), p.getX(), p.getY(), p.getZ(), p.getYaw());
+					err = Bots.spawn(src.getServer(), name, new Bots.Brain(), p.getServerWorld(), p.getX(), p.getY(), p.getZ(), p.getYaw());
 				} else {
-					err = Bots.spawn(src.getServer(), name, "", null, 0, 0, 0, 0); // console: join at world spawn
+					err = Bots.spawn(src.getServer(), name, new Bots.Brain(), null, 0, 0, 0, 0); // console: join at world spawn
 				}
 				if (err != null) {
 					src.sendError(Text.literal(err));
@@ -53,10 +53,65 @@ public final class BotCommands {
 						return 0;
 					}
 					bot.setPersona(StringArgumentType.getString(ctx, "text"));
-					Bots.updatePersona(bot);
+					Bots.updateBrain(bot);
 					ok(ctx.getSource(), "Persona updated.");
 					return 1;
 				}))))
+			.then(literal("train").then(argument("name", StringArgumentType.word())
+				.then(argument("info", StringArgumentType.greedyString()).executes(ctx -> {
+					ServerCommandSource src = ctx.getSource();
+					String name = StringArgumentType.getString(ctx, "name");
+					String info = StringArgumentType.getString(ctx, "info").trim();
+					java.util.List<AiPlayer> targets = new java.util.ArrayList<>();
+					if (name.equalsIgnoreCase("all") || name.equals("*")) {
+						targets.addAll(Bots.ALL);
+					} else {
+						AiPlayer b = Bots.find(name);
+						if (b != null) targets.add(b);
+					}
+					if (targets.isEmpty()) {
+						src.sendError(Text.literal("No such AI player."));
+						return 0;
+					}
+					int taught = 0;
+					for (AiPlayer b : targets) {
+						if (b.addNote(info)) {
+							Bots.updateBrain(b);
+							taught++;
+						}
+					}
+					if (taught == 0) {
+						src.sendError(Text.literal("Their notebook is full (40 notes). Use /ai forget <name> first."));
+						return 0;
+					}
+					ok(src, "Taught " + taught + " bot(s): " + info);
+					return taught;
+				}))))
+			.then(literal("notes").then(argument("name", StringArgumentType.word()).executes(ctx -> {
+				AiPlayer b = Bots.find(StringArgumentType.getString(ctx, "name"));
+				if (b == null) {
+					ctx.getSource().sendError(Text.literal("No such AI player."));
+					return 0;
+				}
+				var notes = b.notes();
+				if (notes.isEmpty()) {
+					ok(ctx.getSource(), b.botName() + " hasn't been taught anything.");
+				} else {
+					for (int i = 0; i < notes.size(); i++) ok(ctx.getSource(), (i + 1) + ". " + notes.get(i));
+				}
+				return notes.size();
+			})))
+			.then(literal("forget").then(argument("name", StringArgumentType.word()).executes(ctx -> {
+				AiPlayer b = Bots.find(StringArgumentType.getString(ctx, "name"));
+				if (b == null) {
+					ctx.getSource().sendError(Text.literal("No such AI player."));
+					return 0;
+				}
+				b.clearNotes();
+				Bots.updateBrain(b);
+				ok(ctx.getSource(), b.botName() + " forgot everything it was taught.");
+				return 1;
+			})))
 			.then(literal("say").then(argument("name", StringArgumentType.word())
 				.then(argument("text", StringArgumentType.greedyString()).executes(ctx -> {
 					AiPlayer bot = Bots.find(StringArgumentType.getString(ctx, "name"));
@@ -88,6 +143,17 @@ public final class BotCommands {
 						ctx.getSource().sendError(Text.literal("Bad action JSON: " + e.getMessage()));
 						return 0;
 					}
+				}))))
+			.then(literal("goal").then(argument("name", StringArgumentType.word())
+				.then(argument("text", StringArgumentType.greedyString()).executes(ctx -> {
+					AiPlayer bot = Bots.find(StringArgumentType.getString(ctx, "name"));
+					if (bot == null) {
+						ctx.getSource().sendError(Text.literal("No such AI player."));
+						return 0;
+					}
+					bot.setGoal(StringArgumentType.getString(ctx, "text"));
+					ok(ctx.getSource(), bot.botName() + "'s goal: " + bot.goal());
+					return 1;
 				}))))
 			.then(literal("list").executes(ctx -> {
 				String names = Bots.ALL.stream().map(AiPlayer::botName).sorted()
