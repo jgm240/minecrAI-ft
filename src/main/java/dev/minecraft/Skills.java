@@ -427,8 +427,13 @@ public final class Skills {
 
 	static Task portal(AiPlayer bot) {
 		Item obsidian = net.minecraft.block.Blocks.OBSIDIAN.asItem();
-		if (count(bot, obsidian) < 10) {
-			bot.report("I need 10 obsidian to build a portal (I have " + count(bot, obsidian) + ").");
+		boolean haveScaffold = false;
+		for (String id : new String[] {"dirt", "cobblestone", "cobbled_deepslate", "netherrack", "oak_planks", "stone", "sand"}) {
+			if (count(bot, Crafting.item(id)) > 0) haveScaffold = true;
+		}
+		int needObsidian = haveScaffold ? 10 : 11; // without a spare block, one extra obsidian serves as scaffold
+		if (count(bot, obsidian) < needObsidian) {
+			bot.report("I need " + needObsidian + " obsidian to build a portal (I have " + count(bot, obsidian) + ").");
 			return null;
 		}
 		if (count(bot, Items.FLINT_AND_STEEL) == 0) {
@@ -437,31 +442,66 @@ public final class Skills {
 		}
 		Direction facing = bot.getHorizontalFacing();
 		Direction across = facing.rotateYClockwise(); // frame extends along this axis
-		BlockPos base = bot.getBlockPos().offset(facing, 3).offset(across, -1); // left-bottom corner of the 4-wide frame
+		// The bottom row is sunk into the ground (like players do), so the side columns can rest on the ground beside it.
+		BlockPos base = bot.getBlockPos().down().offset(facing, 3).offset(across, -1); // left-bottom corner of the 4-wide frame
 		List<Task> steps = new java.util.ArrayList<>();
-		java.util.function.BiConsumer<Integer, Integer> put = (x, y) ->
-			steps.add(new Actions.Place(base.offset(across, x).up(y), "obsidian"));
-		put.accept(1, 0);
-		put.accept(2, 0);
-		for (int y = 1; y <= 3; y++) {
-			put.accept(0, y);
-			put.accept(3, y);
+		for (int x = 1; x <= 2; x++) { // dig out the two bottom blocks, then set obsidian in their place
+			steps.add(new Actions.Mine(base.offset(across, x)));
+			steps.add(new Actions.Place(base.offset(across, x), "obsidian"));
 		}
-		put.accept(1, 4);
-		put.accept(2, 4);
+		for (int x = 1; x <= 2; x++) { // clear the interior
+			for (int y = 1; y <= 3; y++) steps.add(new Actions.Mine(base.offset(across, x).up(y)));
+		}
+		for (int y = 1; y <= 3; y++) { // side columns stand on the ground blocks at x = 0 and x = 3
+			steps.add(new Actions.Place(base.offset(across, 0).up(y), "obsidian"));
+			steps.add(new Actions.Place(base.offset(across, 3).up(y), "obsidian"));
+		}
+		// The top row touches the columns only diagonally, so it needs a throwaway block at a corner to rest on.
+		String scaffold = null;
+		for (String id : new String[] {"dirt", "cobblestone", "cobbled_deepslate", "netherrack", "oak_planks", "stone", "sand"}) {
+			if (count(bot, Crafting.item(id)) > 0) {
+				scaffold = id;
+				break;
+			}
+		}
+		BlockPos corner = base.offset(across, 0).up(4);
+		steps.add(new Actions.Place(corner, scaffold != null ? scaffold : "obsidian"));
+		steps.add(new Actions.Place(base.offset(across, 1).up(4), "obsidian"));
+		steps.add(new Actions.Place(base.offset(across, 2).up(4), "obsidian"));
+		if (scaffold != null) steps.add(new Actions.Mine(corner)); // take the scaffold back down
 		BlockPos lightAt = base.offset(across, 1); // interior bottom: top face of the lower obsidian
 		steps.add(new Task() {
+			private int waited = -1;
+
 			public boolean tick(AiPlayer b) {
+				ServerWorld w = b.getServerWorld();
+				BlockPos inside = lightAt.up();
+				if (waited >= 0) { // verify the portal formed
+					if (w.getBlockState(inside).isOf(net.minecraft.block.Blocks.NETHER_PORTAL)) {
+						b.hear("[you] the nether portal is lit");
+						return true;
+					}
+					if (++waited > 10) {
+						b.report("I built the frame but the portal didn't light.");
+						return true;
+					}
+					return false;
+				}
 				if (!Actions.equip(b, "flint_and_steel")) {
 					b.report("I lost my flint and steel.");
 					return true;
 				}
-				BlockPos floor = lightAt;
-				BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(floor).add(0, 0.5, 0), Direction.UP, floor, false);
+				// face the frame from in front of it, aiming at the top of the lower obsidian
+				BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(lightAt).add(0, 0.5, 0), Direction.UP, lightAt, false);
 				b.lookAt(hit.getPos());
-				ActionResult r = b.interactionManager.interactBlock(b, b.getServerWorld(), b.getMainHandStack(), Hand.MAIN_HAND, hit);
+				ActionResult r = b.interactionManager.interactBlock(b, w, b.getMainHandStack(), Hand.MAIN_HAND, hit);
 				if (r.isAccepted()) b.swingHand(Hand.MAIN_HAND, true);
-				return true;
+				else {
+					b.report("The flint and steel wouldn't light (" + r + ").");
+					return true;
+				}
+				waited = 0;
+				return false;
 			}
 
 			public String describe() {
