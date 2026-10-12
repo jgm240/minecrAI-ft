@@ -18,17 +18,62 @@ ollama serve             # if it isn't already running
 Config: `"provider": "ollama"`, `"ollama_url": "http://localhost:11434"`, `"ollama_model": "llama3.2"`.
 Ollama must run on the machine hosting the Minecraft server (or point `ollama_url` elsewhere).
 
-### Specialised fast model (recommended with Ollama)
-A stock model has to read the whole action schema and survival guide on every request. Bake that in once instead:
+### Specialised fast model: `minecraift-bot` (recommended with Ollama)
+A stock model has to read the whole action schema and survival guide on every request. The Modelfile bakes that in once, so each
+request only carries the bot's name, personality, taught notes and current state. That means shorter prompts and faster replies.
 
+**1. Install Ollama and start it** (skip if it's already running)
 ```
-/ai modelfile            # writes config/minecraift.Modelfile (a ready-made copy is also in this repo)
-ollama create minecraift-bot -f config/minecraift.Modelfile
+brew install ollama          # or download it from https://ollama.com
+ollama serve                 # leave this running, or use the Ollama app / `brew services start ollama`
 ```
-then set `"ollama_model": "minecraift-bot"`. Slim prompts switch on automatically for models named `minecraift*`, so each request only
-carries the bot's name, personality, taught notes and state. The Modelfile uses `FROM llama3.2` (3B, fast); pass another base with
-`/ai modelfile qwen2.5:7b` for smarter but slower plans. It also sets a low temperature, a 4k context and a 320-token reply cap, and
-the mod asks Ollama to keep the model loaded (`ollama_keep_alive`, default 30m) so replies don't pay a reload.
+
+**2. Pull the base model** (about 2 GB, once)
+```
+ollama pull llama3.2
+```
+
+**3. Build `minecraift-bot` from the Modelfile**
+
+Use the `minecraift.Modelfile` in this repo, or generate one that always matches your installed mod version from in game:
+```
+/ai modelfile                # writes config/minecraift.Modelfile  (or: /ai modelfile qwen2.5:7b for a different base)
+```
+then, from the folder containing the file:
+```
+ollama create minecraift-bot -f minecraift.Modelfile
+ollama list                  # minecraift-bot should appear
+```
+
+**4. Check that it answers** (optional)
+```
+ollama run minecraift-bot
+>>> Your state: holding nothing, inventory empty, a tree 3 blocks away. A player says: get some wood
+```
+It should reply with a single JSON object containing `say` and `actions` (e.g. a `gather` of logs).
+
+**5. Point the mod at it**
+
+In `config/minecraift.json`:
+```json
+{
+  "provider": "ollama",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "minecraift-bot"
+}
+```
+then run `/ai reload` and `/ai spawn Bob`. Slim prompts switch on automatically for any model whose name starts with `minecraift`
+(or set `"ollama_slim_prompt": true` for a differently-named one).
+
+**Tips**
+- **Rebuild after updating the mod.** The action list lives inside the model, so when you update the mod run `/ai modelfile` and
+  `ollama create minecraift-bot -f ...` again, or the model won't know about new actions.
+- **Bigger base, smarter plans.** `FROM llama3.2` (3B) is fast; `qwen2.5:7b` or `llama3.1:8b` follow multi-step plans better but are
+  slower. Change the `FROM` line (or run `/ai modelfile <base>`) and re-run `ollama create`.
+- **Keep it loaded.** The mod asks Ollama to keep the model in memory (`ollama_keep_alive`, default `30m`), so only the first reply is slow.
+- **Ollama on another machine?** Set `ollama_url` to it; it just needs to be reachable from the Minecraft server.
+- **Not working?** With `"debug": true` the server log shows what bots hear and plan. "AI request failed" with a hint means Ollama
+  isn't reachable or the model name doesn't match `ollama list`.
 
 ### Claude API
 Set `"provider": "anthropic"` and `api_key` (or the `ANTHROPIC_API_KEY` environment variable). Costs API credits.

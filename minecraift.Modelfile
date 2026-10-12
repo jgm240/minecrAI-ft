@@ -1,6 +1,10 @@
 # minecrAI-ft: a small, fast Minecraft bot model.
-# Build it with:  ollama create minecraift-bot -f minecraift.Modelfile
-# then set "ollama_model": "minecraift-bot" in config/minecraift.json (slim prompts switch on automatically).
+#
+# 1. ollama pull <the FROM model below>                 (once)
+# 2. ollama create minecraift-bot -f minecraift.Modelfile
+# 3. set "ollama_model": "minecraift-bot" in config/minecraift.json, then /ai reload in game
+#    (slim prompts switch on automatically for models whose name starts with "minecraift").
+# Rebuild the model after updating the mod: the action list is baked into this file (/ai modelfile regenerates it).
 FROM llama3.2
 
 # Low temperature: plans should be reliable, not creative. A small context keeps replies quick.

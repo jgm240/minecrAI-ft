@@ -79,8 +79,12 @@ public final class AiBrain {
 	/** Full text of an Ollama Modelfile that bakes the static prompt into a fast, specialised model. */
 	public static String modelfile(String base) {
 		return "# minecrAI-ft: a small, fast Minecraft bot model.\n"
-			+ "# Build it with:  ollama create minecraift-bot -f minecraift.Modelfile\n"
-			+ "# then set \"ollama_model\": \"minecraift-bot\" in config/minecraift.json (slim prompts switch on automatically).\n"
+			+ "#\n"
+			+ "# 1. ollama pull <the FROM model below>                 (once)\n"
+			+ "# 2. ollama create minecraift-bot -f minecraift.Modelfile\n"
+			+ "# 3. set \"ollama_model\": \"minecraift-bot\" in config/minecraift.json, then /ai reload in game\n"
+			+ "#    (slim prompts switch on automatically for models whose name starts with \"minecraift\").\n"
+			+ "# Rebuild the model after updating the mod: the action list is baked into this file (/ai modelfile regenerates it).\n"
 			+ "FROM " + base + "\n\n"
 			+ "# Low temperature: plans should be reliable, not creative. A small context keeps replies quick.\n"
 			+ "PARAMETER temperature 0.2\n"
