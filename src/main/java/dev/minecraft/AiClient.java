@@ -23,14 +23,20 @@ public final class AiClient {
 
 	/** Local Ollama via /api/chat (non-streaming, JSON-constrained output). */
 	private static CompletableFuture<String> askOllama(AiConfig cfg, String system, String user) {
-		JsonObject sys = new JsonObject();
-		sys.addProperty("role", "system");
-		sys.addProperty("content", system);
+		// A "system" message in the request would replace the Modelfile's baked-in SYSTEM prompt. With a specialised
+		// model we therefore put the identity text at the top of the user message instead and send no system message.
+		JsonArray messages = new JsonArray();
 		JsonObject usr = new JsonObject();
 		usr.addProperty("role", "user");
-		usr.addProperty("content", user);
-		JsonArray messages = new JsonArray();
-		messages.add(sys);
+		if (cfg.useSlim()) {
+			usr.addProperty("content", system + "\n\n" + user);
+		} else {
+			JsonObject sys = new JsonObject();
+			sys.addProperty("role", "system");
+			sys.addProperty("content", system);
+			messages.add(sys);
+			usr.addProperty("content", user);
+		}
 		messages.add(usr);
 
 		JsonObject options = new JsonObject();

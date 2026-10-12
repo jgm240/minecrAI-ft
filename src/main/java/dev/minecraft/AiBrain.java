@@ -96,13 +96,104 @@ public final class AiBrain {
 			+ "SYSTEM \"\"\"You are an AI-controlled bot playing Minecraft survival on a server alongside humans, with a normal "
 			+ "player body and inventory. Each turn you are told your name, personality, anything you were taught, recent "
 			+ "events and your current state.\n"
-			+ staticPrompt() + "\"\"\"\n";
+			+ staticPrompt() + "\"\"\"\n\n"
+			+ "# Worked examples (same format the mod sends), so even a small model picks the right action.\n"
+			+ examples();
+	}
+
+	/** Short, situation-specific nudges toward the right skill; they help small models a lot and cost few tokens. */
+	static String hints(AiPlayer bot, String text) {
+		String t = (text + " " + bot.goal()).toLowerCase();
+		var inv = Crafting.inventoryCounts(bot);
+		int obsidian = inv.getOrDefault(net.minecraft.block.Blocks.OBSIDIAN.asItem(), 0);
+		boolean flint = inv.getOrDefault(net.minecraft.item.Items.FLINT_AND_STEEL, 0) > 0;
+		StringBuilder sb = new StringBuilder();
+		if (t.contains("portal") && bot.recentLog().contains("the nether portal is lit")) {
+			sb.append("Hint: your nether portal is already built and lit, so this goal is complete: set \"goal\" to \"done\" "
+				+ "and plan no actions.\n");
+		} else if (t.contains("portal")) {
+			if (obsidian >= 10 && flint) {
+				sb.append("Hint: you carry the 10 obsidian and the flint_and_steel a portal needs, so {\"type\":\"portal\"} "
+					+ "builds and lights it in one step. Do not goto or gather first.\n");
+			} else {
+				sb.append("Hint: a portal needs 10 obsidian (you have ").append(obsidian).append(") and a flint_and_steel (")
+					.append(flint ? "you have one" : "you have none").append("); obsidian needs a diamond_pickaxe.\n");
+			}
+		}
+		if (t.contains("pickaxe") || t.contains("sword") || t.contains("axe") || t.contains("tool")) {
+			sb.append("Hint: craft makes missing intermediates (planks, sticks, a crafting table) by itself; you only need "
+				+ "the raw materials, e.g. gather logs first.\n");
+		}
+		if (t.contains("food") || t.contains("hungry") || t.contains("eat")) {
+			sb.append("Hint: hunt cows/pigs/sheep, collect the drops, then eat.\n");
+		}
+		return sb.toString();
+	}
+
+	/** The per-request message. Also used to build the Modelfile's example turns, so the two can't drift apart. */
+	static String userPrompt(String log, String state, String nearby, String mode, String goal, String event) {
+		return "Recent events:\n" + log + "\n\nYour state:\n" + state + "Players nearby: " + nearby
+			+ "\nYou are currently: " + mode
+			+ "\nYour goal: " + (goal.isEmpty() ? "(none)" : goal)
+			+ "\n\n" + event;
+	}
+
+	private static final String CONTINUE = "No new messages. Continue working toward your goal using the outcomes above; "
+		+ "set \"goal\" to \"done\" when it is complete.";
+
+	/** Worked examples baked into the specialised model (Modelfile MESSAGE pairs). */
+	private static String examples() {
+		String head = "You are Bob, an AI-controlled bot playing Minecraft survival on a server alongside humans, with a normal "
+			+ "player body and inventory. Personality: " + new AiConfig().default_persona + ".\n"
+			+ "Answer in the JSON format you were set up with.\n\n";
+		String[][] ex = {
+			// {log, state, nearby, mode, goal, event, reply}
+			{"", "Position: 10 -60 4 in minecraft:overworld\nHealth: 20/20, food: 20/20, gamemode: survival\nHolding: nothing\n"
+				+ "Inventory: 10 obsidian, 1 flint_and_steel, 1 dirt\nNearby blocks (nearest of each type): grass_block@10,-61,4\n"
+				+ "Nearby entities: none\n", "", "wander", "build a nether portal", CONTINUE,
+				"{\"say\":\"Building the portal.\",\"goal\":\"build a nether portal\",\"actions\":[{\"type\":\"portal\"}]}"},
+			{"[you] plan: build a nether portal\n[you] the nether portal is lit", "Position: 10 -60 4 in minecraft:overworld\n"
+				+ "Health: 20/20, food: 20/20, gamemode: survival\nHolding: flint_and_steel\nInventory: 1 flint_and_steel, 1 dirt\n"
+				+ "Nearby blocks (nearest of each type): obsidian@13,-60,0; nether_portal@14,-60,0\nNearby entities: none\n",
+				"", "wander", "build a nether portal", CONTINUE,
+				"{\"say\":\"The portal is lit!\",\"goal\":\"done\",\"actions\":[]}"},
+			{"", "Position: 0 -60 0 in minecraft:overworld\nHealth: 20/20, food: 20/20, gamemode: survival\nHolding: nothing\n"
+				+ "Inventory: empty\nNearby blocks (nearest of each type): oak_log@3,-60,2; grass_block@0,-61,0\nNearby entities: none\n",
+				"", "wander", "make a wooden pickaxe", CONTINUE,
+				"{\"say\":\"Getting wood first.\",\"goal\":\"make a wooden pickaxe\",\"actions\":["
+					+ "{\"type\":\"gather\",\"block\":\"log\",\"count\":3},{\"type\":\"craft\",\"item\":\"wooden_pickaxe\",\"count\":1}]}"},
+			{"", "Position: 0 -60 0 in minecraft:overworld\nHealth: 20/20, food: 20/20, gamemode: survival\nHolding: wooden_pickaxe\n"
+				+ "Inventory: 1 wooden_pickaxe, 2 stick\nNearby blocks (nearest of each type): stone@4,-60,1; coal_ore@5,-60,2\n"
+				+ "Nearby entities: none\n", "", "wander", "make a stone pickaxe", CONTINUE,
+				"{\"say\":\"Mining some stone.\",\"goal\":\"make a stone pickaxe\",\"actions\":["
+					+ "{\"type\":\"gather\",\"block\":\"stone\",\"count\":3},{\"type\":\"craft\",\"item\":\"stone_pickaxe\",\"count\":1}]}"},
+			{"Steve: follow me", "Position: 0 -60 0 in minecraft:overworld\nHealth: 20/20, food: 20/20, gamemode: survival\n"
+				+ "Holding: nothing\nInventory: empty\nNearby blocks (nearest of each type): grass_block@0,-61,0\n"
+				+ "Nearby entities: Steve@2,-60,1\n", "Steve", "wander", "",
+				"New message from Steve: follow me",
+				"{\"say\":\"Sure, lead the way!\",\"actions\":[{\"type\":\"follow\",\"target\":\"Steve\"}]}"},
+			{"Steve: hi Bob", "Position: 0 -60 0 in minecraft:overworld\nHealth: 20/20, food: 20/20, gamemode: survival\n"
+				+ "Holding: nothing\nInventory: empty\nNearby blocks (nearest of each type): grass_block@0,-61,0\n"
+				+ "Nearby entities: Steve@2,-60,1\n", "Steve", "wander", "",
+				"New message from Steve: hi Bob",
+				"{\"say\":\"Hey Steve! What are we up to?\",\"actions\":[]}"},
+			{"", "Position: 0 -60 0 in minecraft:overworld\nHealth: 20/20, food: 6/20, gamemode: survival\nHolding: iron_sword\n"
+				+ "Inventory: 1 iron_sword\nNearby blocks (nearest of each type): grass_block@0,-61,0\n"
+				+ "Nearby entities: cow@6,-60,3; cow@8,-60,-2\n", "", "wander", "get some food", CONTINUE,
+				"{\"say\":\"Hunting cows.\",\"goal\":\"get some food\",\"actions\":["
+					+ "{\"type\":\"hunt\",\"target\":\"cow\",\"count\":2},{\"type\":\"collect\"}]}"},
+		};
+		StringBuilder sb = new StringBuilder();
+		for (String[] e : ex) {
+			sb.append("MESSAGE user \"\"\"").append(head).append(userPrompt(e[0], e[1], e[2], e[3], e[4], e[5])).append("\"\"\"\n");
+			sb.append("MESSAGE assistant \"\"\"").append(e[6]).append("\"\"\"\n\n");
+		}
+		return sb.toString();
 	}
 
 	/** Slim prompts rely on the model already knowing the format (see /ai modelfile). */
 	private static boolean slim() {
-		AiConfig c = MinecrAIft.CONFIG;
-		return c.isOllama() && (c.ollama_slim_prompt || c.ollama_model.toLowerCase().startsWith("minecraift"));
+		return MinecrAIft.CONFIG.useSlim();
 	}
 
 	private static String systemPrompt(AiPlayer bot) {
@@ -157,8 +248,7 @@ public final class AiBrain {
 			bot.setGoal("");
 			return;
 		}
-		ask(server, bot, null, "No new messages. Continue working toward your goal using the outcomes above; "
-			+ "set \"goal\" to \"done\" when it is complete.", false);
+		ask(server, bot, null, CONTINUE, false);
 	}
 
 	private static void ask(MinecraftServer server, AiPlayer bot, ServerPlayerEntity sender, String event, boolean dm) {
@@ -177,11 +267,8 @@ public final class AiBrain {
 		List<String> nearby = server.getPlayerManager().getPlayerList().stream()
 			.filter(p -> p != bot && p.getServerWorld() == bot.getServerWorld() && p.squaredDistanceTo(bot) <= r2)
 			.map(p -> p.getName().getString()).collect(Collectors.toList());
-		String user = "Recent events:\n" + bot.recentLog() + "\n\nYour state:\n" + Perception.describe(bot)
-			+ "Players nearby: " + String.join(", ", nearby)
-			+ "\nYou are currently: " + bot.mode().name().toLowerCase()
-			+ "\nYour goal: " + (bot.goal().isEmpty() ? "(none)" : bot.goal())
-			+ "\n\n" + event;
+		String user = userPrompt(bot.recentLog(), Perception.describe(bot), String.join(", ", nearby),
+			bot.mode().name().toLowerCase(), bot.goal(), event + "\n" + hints(bot, event));
 
 		bot.busy = true;
 		AiClient.ask(cfg, systemPrompt(bot), user).whenComplete((text, err) -> server.execute(() -> {

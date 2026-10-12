@@ -39,6 +39,11 @@ public final class AiConfig {
 
 	public String default_persona = "a friendly, curious Minecraft player who likes building and exploring";
 
+	/** Slim prompts rely on a Modelfile for the format (see /ai modelfile); auto-on for minecraift* models. */
+	public boolean useSlim() {
+		return isOllama() && (ollama_slim_prompt || ollama_model.toLowerCase().startsWith("minecraift"));
+	}
+
 	public boolean isOllama() {
 		return !"anthropic".equalsIgnoreCase(provider);
 	}

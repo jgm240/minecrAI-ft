@@ -65,6 +65,14 @@ In `config/minecraift.json`:
 then run `/ai reload` and `/ai spawn Bob`. Slim prompts switch on automatically for any model whose name starts with `minecraift`
 (or set `"ollama_slim_prompt": true` for a differently-named one).
 
+**Why it's more than a long prompt**
+- The Modelfile includes seven worked examples (build a portal, wooden pickaxe, stone pickaxe, follow, chat, hunt food) in the exact
+  format the mod sends, so even a 3B model produces valid plans.
+- With a specialised model the mod sends **no system message** (Ollama would let it replace the baked-in one) and puts the bot's name,
+  personality and notes at the top of the user message instead.
+- The mod adds short situation hints to each request ("you carry the 10 obsidian and flint and steel a portal needs, so `portal` does
+  it in one step"), which help small models pick the right skill.
+
 **Tips**
 - **Rebuild after updating the mod.** The action list lives inside the model, so when you update the mod run `/ai modelfile` and
   `ollama create minecraift-bot -f ...` again, or the model won't know about new actions.
