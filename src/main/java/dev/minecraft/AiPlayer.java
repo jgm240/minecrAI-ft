@@ -30,6 +30,7 @@ public class AiPlayer extends ServerPlayerEntity {
 	private final java.util.List<String> notes = new java.util.ArrayList<>();
 	private final Deque<String> log = new ArrayDeque<>();
 	private boolean dead;
+	private boolean loggedTickFailure;
 	private final Deque<Task> tasks = new ArrayDeque<>();
 	private boolean reportedFailure;
 	private int failStreak;
@@ -282,11 +283,17 @@ public class AiPlayer extends ServerPlayerEntity {
 			networkHandler.syncWithPlayerPosition();
 			getServerWorld().getChunkManager().updatePosition(this);
 		}
+		// A real client confirms a teleport (dimension change) itself; until it does, the portal cooldown never counts down.
+		if (isInTeleportationState()) onTeleportationDone();
 		try {
 			super.tick();
 			playerTick();
-		} catch (NullPointerException ignored) {
-			// partially-initialised fake connection; harmless
+		} catch (NullPointerException e) {
+			// partially-initialised fake connection; normally harmless, but log the first one so it can be diagnosed
+			if (!loggedTickFailure) {
+				loggedTickFailure = true;
+				MinecrAIft.LOGGER.warn("Tick of {} threw a NullPointerException (further ones are suppressed)", botName(), e);
+			}
 		}
 		if (!dead) drive();
 	}

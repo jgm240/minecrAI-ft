@@ -47,6 +47,7 @@ public final class Actions {
 			case "hunt": return new Skills.Hunt(str(o, "target"), o.has("count") ? o.get("count").getAsInt() : 1);
 			case "collect": return new Skills.Collect();
 			case "portal": return new PortalTask();
+			case "enter_portal": return new EnterPortal();
 			case "eat": return new Eat();
 			case "command": return new Command(str(o, "command"));
 			case "follow": return new SetMode(AiPlayer.Mode.FOLLOW, str(o, "target"));
@@ -489,6 +490,109 @@ public final class Actions {
 
 		public String describe() {
 			return "eat";
+		}
+	}
+
+	/** Walk into the nearest lit nether portal and wait for the dimension change (about 4 seconds inside). */
+	static final class EnterPortal implements Task {
+		private net.minecraft.registry.RegistryKey<net.minecraft.world.World> start;
+		private BlockPos target;
+		private BlockPos stepOut;
+		private boolean checkedStart;
+		private int cooldownWait;
+		private int ticks;
+
+		private static boolean inPortal(ServerWorld w, BlockPos p) {
+			return w.getBlockState(p).isOf(net.minecraft.block.Blocks.NETHER_PORTAL)
+				|| w.getBlockState(p.up()).isOf(net.minecraft.block.Blocks.NETHER_PORTAL);
+		}
+
+		/** A standable spot a few blocks from every portal block, to wait at before stepping back in. */
+		private BlockPos clearSpot(AiPlayer bot) {
+			ServerWorld w = bot.getServerWorld();
+			BlockPos me = bot.getBlockPos();
+			for (int r = 3; r <= 5; r++) {
+				for (Direction d : Direction.Type.HORIZONTAL) {
+					BlockPos c = me.offset(d, r);
+					for (int dy = -1; dy <= 1; dy++) {
+						BlockPos q = c.up(dy);
+						if (Pathfinder.standable(w, q) && !inPortal(w, q) && !inPortal(w, q.offset(d.rotateYClockwise()))
+							&& !inPortal(w, q.offset(d.rotateYCounterclockwise()))) {
+							return q;
+						}
+					}
+				}
+			}
+			return null;
+		}
+
+		private BlockPos nearestPortal(AiPlayer bot) {
+			ServerWorld w = bot.getServerWorld();
+			BlockPos c = bot.getBlockPos();
+			BlockPos best = null;
+			double bestD = Double.MAX_VALUE;
+			for (BlockPos p : BlockPos.iterate(c.add(-14, -5, -14), c.add(14, 6, 14))) {
+				if (!w.getBlockState(p).isOf(net.minecraft.block.Blocks.NETHER_PORTAL)) continue;
+				double d = c.getSquaredDistance(p);
+				if (d < bestD) {
+					bestD = d;
+					best = p.toImmutable();
+				}
+			}
+			return best;
+		}
+
+		public boolean tick(AiPlayer bot) {
+			ServerWorld w = bot.getServerWorld();
+			if (start == null) start = w.getRegistryKey();
+			if (MinecrAIft.CONFIG.debug && ticks % 40 == 0) {
+				MinecrAIft.LOGGER.info("enter_portal t={} pos={} stepOut={} wait={} target={} dim={}", ticks, bot.getBlockPos().toShortString(),
+					stepOut == null ? null : stepOut.toShortString(), cooldownWait,
+					target == null ? null : target.toShortString(), w.getRegistryKey().getValue());
+			}
+			if (!w.getRegistryKey().equals(start)) {
+				bot.hear("[you] went through the portal into " + w.getRegistryKey().getValue());
+				return true;
+			}
+			if (++ticks > 900) {
+				bot.report("I couldn't get through the portal.");
+				return true;
+			}
+			// Standing in the portal you arrived through keeps resetting its cooldown: step out first, then walk back in.
+			if (!checkedStart) {
+				checkedStart = true;
+				if (inPortal(w, bot.getBlockPos())) stepOut = clearSpot(bot);
+			}
+			if (stepOut != null) {
+				if (bot.navigateTo(Vec3d.ofBottomCenter(stepOut), 0.7) || inPortal(w, bot.getBlockPos()) == false && ticks > 60) {
+					stepOut = null;
+					cooldownWait = 40; // let the portal cooldown (10 ticks) run out completely before stepping back in
+				}
+				return false;
+			}
+			if (cooldownWait > 0) {
+				cooldownWait--;
+				return false;
+			}
+			if (target == null || !w.getBlockState(target).isOf(net.minecraft.block.Blocks.NETHER_PORTAL)) {
+				target = nearestPortal(bot);
+				if (target == null) {
+					bot.report("I don't see a lit nether portal nearby.");
+					return true;
+				}
+			}
+			Vec3d inside = Vec3d.ofBottomCenter(target);
+			double dx = inside.x - bot.getX(), dz = inside.z - bot.getZ();
+			if (Math.sqrt(dx * dx + dz * dz) > 2.0) {
+				bot.navigateTo(inside, 1.5); // the pathfinder avoids portal blocks, so this ends next to the frame
+			} else {
+				bot.walkToward(inside, 0.1); // then step straight in and stand there
+			}
+			return false;
+		}
+
+		public String describe() {
+			return "enter the nether portal";
 		}
 	}
 }

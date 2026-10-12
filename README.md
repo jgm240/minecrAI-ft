@@ -80,6 +80,8 @@ then run `/ai reload` and `/ai spawn Bob`. Slim prompts switch on automatically 
   slower. Change the `FROM` line (or run `/ai modelfile <base>`) and re-run `ollama create`.
 - **Keep it loaded.** The mod asks Ollama to keep the model in memory (`ollama_keep_alive`, default `30m`), so only the first reply is slow.
 - **Ollama on another machine?** Set `ollama_url` to it; it just needs to be reachable from the Minecraft server.
+- **Portals:** bots can walk through a lit portal with `enter_portal` (and back again). They step out of the portal they arrived through
+  first, as vanilla requires.
 - **Not working?** With `"debug": true` the server log shows what bots hear and plan. "AI request failed" with a hint means Ollama
   isn't reachable or the model name doesn't match `ollama list`.
 
@@ -106,7 +108,7 @@ spawn protection and gamemode rules all apply). The model can chain up to 8 step
 **Skills** (high-level, so even small local models can use them):
 `gather` (logs, stone, any ore or block: walks there, mines it, picks up the drops), `craft` (works out intermediates itself:
 logs -> planks -> sticks -> pickaxe, and places a crafting table it carries or crafts), `smelt` (furnace + fuel), `hunt` (cows,
-zombies, any hostile), `portal` (builds and lights a Nether portal from 10 obsidian + flint and steel), `collect`, `eat`.
+zombies, any hostile), `portal` (builds and lights a Nether portal from 10 obsidian + flint and steel), `enter_portal` (walks through it), `collect`, `eat`.
 
 **Primitives:** `goto` (A* pathfinding: detours around walls, steps up, drops), `mine`, `place`, `use_block`, `use_item`, `select`,
 `drop`, `attack`, `follow`, `stay`, `wander`, `command`.

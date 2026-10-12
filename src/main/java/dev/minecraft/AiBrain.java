@@ -64,6 +64,7 @@ public final class AiBrain {
 			+ "  {\"type\":\"smelt\",\"item\":\"raw_iron\",\"count\":3}  smelt in a furnace (placed from inventory if needed; uses fuel)\n"
 			+ "  {\"type\":\"hunt\",\"target\":\"cow|zombie|hostile\",\"count\":1}  find and kill mobs\n"
 			+ "  {\"type\":\"portal\"}  build and light a nether portal from 10 obsidian + flint_and_steel\n"
+			+ "  {\"type\":\"enter_portal\"}  walk into the nearest lit nether portal and travel through it\n"
 			+ "  {\"type\":\"goto\",\"x\":0,\"y\":0,\"z\":0}  walk there (pathfinding)\n"
 			+ "  {\"type\":\"mine\",\"x\":0,\"y\":0,\"z\":0}, {\"type\":\"place\",\"x\":0,\"y\":0,\"z\":0,\"item\":\"dirt\"}, "
 			+ "{\"type\":\"use_block\",\"x\":0,\"y\":0,\"z\":0}\n"
