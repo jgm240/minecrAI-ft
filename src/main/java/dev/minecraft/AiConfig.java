@@ -18,6 +18,10 @@ public final class AiConfig {
 	public String provider = "ollama";
 	public String ollama_url = "http://localhost:11434";
 	public String ollama_model = "llama3.2";
+	/** Send only the bot's identity and notes, relying on a Modelfile (/ai modelfile) for the format. Auto-on for minecraift* models. */
+	public boolean ollama_slim_prompt = false;
+	/** How long Ollama keeps the model loaded between requests; keeps replies fast. */
+	public String ollama_keep_alive = "30m";
 
 	public String api_key = "";
 	public String model = "claude-haiku-4-5-20251001";

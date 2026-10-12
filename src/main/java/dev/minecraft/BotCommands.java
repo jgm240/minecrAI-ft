@@ -17,6 +17,18 @@ public final class BotCommands {
 		s.sendFeedback(() -> Text.literal(m).formatted(Formatting.GREEN), false);
 	}
 
+	private static int writeModelfile(ServerCommandSource src, String base) {
+		try {
+			var file = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("minecraift.Modelfile");
+			java.nio.file.Files.writeString(file, AiBrain.modelfile(base));
+			ok(src, "Wrote " + file + ". Build it with: ollama create minecraift-bot -f \"" + file + "\"");
+			return 1;
+		} catch (java.io.IOException e) {
+			src.sendError(Text.literal("Could not write the Modelfile: " + e.getMessage()));
+			return 0;
+		}
+	}
+
 	public static void register(CommandDispatcher<ServerCommandSource> d) {
 		d.register(literal("ai").requires(s -> s.hasPermissionLevel(2))
 			.then(literal("spawn").then(argument("name", StringArgumentType.word()).executes(ctx -> {
@@ -155,6 +167,9 @@ public final class BotCommands {
 					ok(ctx.getSource(), bot.botName() + "'s goal: " + bot.goal());
 					return 1;
 				}))))
+			.then(literal("modelfile").executes(ctx -> writeModelfile(ctx.getSource(), "llama3.2"))
+				.then(argument("base", StringArgumentType.word()).executes(ctx ->
+					writeModelfile(ctx.getSource(), StringArgumentType.getString(ctx, "base")))))
 			.then(literal("list").executes(ctx -> {
 				String names = Bots.ALL.stream().map(AiPlayer::botName).sorted()
 					.reduce((a, b) -> a + ", " + b).orElse("(none)");

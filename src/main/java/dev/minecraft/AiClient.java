@@ -41,6 +41,7 @@ public final class AiClient {
 		body.add("messages", messages);
 		body.addProperty("stream", false);
 		body.addProperty("format", "json");
+		body.addProperty("keep_alive", cfg.ollama_keep_alive);
 		body.add("options", options);
 
 		String base = cfg.ollama_url.endsWith("/") ? cfg.ollama_url.substring(0, cfg.ollama_url.length() - 1) : cfg.ollama_url;

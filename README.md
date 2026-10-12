@@ -18,6 +18,18 @@ ollama serve             # if it isn't already running
 Config: `"provider": "ollama"`, `"ollama_url": "http://localhost:11434"`, `"ollama_model": "llama3.2"`.
 Ollama must run on the machine hosting the Minecraft server (or point `ollama_url` elsewhere).
 
+### Specialised fast model (recommended with Ollama)
+A stock model has to read the whole action schema and survival guide on every request. Bake that in once instead:
+
+```
+/ai modelfile            # writes config/minecraift.Modelfile (a ready-made copy is also in this repo)
+ollama create minecraift-bot -f config/minecraift.Modelfile
+```
+then set `"ollama_model": "minecraift-bot"`. Slim prompts switch on automatically for models named `minecraift*`, so each request only
+carries the bot's name, personality, taught notes and state. The Modelfile uses `FROM llama3.2` (3B, fast); pass another base with
+`/ai modelfile qwen2.5:7b` for smarter but slower plans. It also sets a low temperature, a 4k context and a 320-token reply cap, and
+the mod asks Ollama to keep the model loaded (`ollama_keep_alive`, default 30m) so replies don't pay a reload.
+
 ### Claude API
 Set `"provider": "anthropic"` and `api_key` (or the `ANTHROPIC_API_KEY` environment variable). Costs API credits.
 
